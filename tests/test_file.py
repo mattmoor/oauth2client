@@ -32,6 +32,7 @@ import stat
 import tempfile
 import unittest
 
+from .http_mock import HttpMockSequence
 from oauth2client import GOOGLE_TOKEN_URI
 from oauth2client import file
 from oauth2client import locked_file
@@ -64,11 +65,12 @@ class OAuth2ClientFileTests(unittest.TestCase):
     except OSError:
       pass
 
-  def create_test_credentials(self, client_id='some_client_id'):
+  def create_test_credentials(self, client_id='some_client_id',
+                              expiration=None):
     access_token = 'foo'
     client_secret = 'cOuDdkfjxxnv+'
     refresh_token = '1/0/a.df219fjls0'
-    token_expiry = datetime.datetime.utcnow()
+    token_expiry = datetime.datetime.utcnow() if not expiration else expiration
     token_uri = 'https://www.google.com/accounts/o8/oauth2/token'
     user_agent = 'refresh_checker/1.0'
 
@@ -119,8 +121,29 @@ class OAuth2ClientFileTests(unittest.TestCase):
     self.assertEquals(data['_class'], 'OAuth2Credentials')
     self.assertEquals(data['_module'], OAuth2Credentials.__module__)
 
-  def test_token_refresh(self):
-    credentials = self.create_test_credentials()
+  def test_token_refresh_store_expired(self):
+    expiration = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+    credentials = self.create_test_credentials(expiration=expiration)
+
+    s = file.Storage(FILENAME)
+    s.put(credentials)
+    credentials = s.get()
+    new_cred = copy.copy(credentials)
+    new_cred.access_token = 'bar'
+    s.put(new_cred)
+
+    access_token = '1/3w'
+    token_response = {'access_token': access_token, 'expires_in': 3600}
+    http = HttpMockSequence([
+        ({'status': '200'}, json.dumps(token_response).encode('utf-8')),
+    ])
+
+    credentials._refresh(http.request)
+    self.assertEquals(credentials.access_token, access_token)
+
+  def test_token_refresh_good_store(self):
+    expiration = datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+    credentials = self.create_test_credentials(expiration=expiration)
 
     s = file.Storage(FILENAME)
     s.put(credentials)

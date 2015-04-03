@@ -756,7 +756,8 @@ class OAuth2Credentials(Credentials):
       try:
         new_cred = self.store.locked_get()
         if (new_cred and not new_cred.invalid and
-            new_cred.access_token != self.access_token):
+            new_cred.access_token != self.access_token and
+            not new_cred.access_token_expired):
           logger.info('Updated access_token read from Storage')
           self._updateFromCredential(new_cred)
         else:
